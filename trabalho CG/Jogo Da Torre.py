@@ -47,20 +47,85 @@ def movimento(window, delta_time):
     
     angulo = math.radians(camera_horizontal)
     
-    frenteX = math.cos(angulo)
+    FrenteX = math.cos(angulo)
     FrenteZ = math.sin(angulo)
-    
+   
+    #isso eu não lembro se tem como fazer isso de forma diferente
+    DireitaX = -FrenteZ
+    DireitaZ =  FrenteX
+
     velocidade_Movimento = velocidade * delta_time
     
     if glfw.get_key(window, glfw.KEY_W) == glfw.PRESS:
-        Camera_pos[0] += frenteX * velocidade_Movimento
+        Camera_pos[0] += FrenteX * velocidade_Movimento
         Camera_pos[2] += FrenteZ * velocidade_Movimento
     
     if glfw.get_key(window, glfw.KEY_S) == glfw.PRESS:
-        Camera_pos[0] -= frenteX * velocidade_Movimento
+        Camera_pos[0] -= FrenteX * velocidade_Movimento
         Camera_pos[2] -= FrenteZ * velocidade_Movimento
     
-#funções de desenho
+    if glfw.get_key(window, glfw.KEY_D) == glfw.PRESS:
+        Camera_pos[0] += DireitaX * velocidade_Movimento
+        Camera_pos[2] += DireitaZ * velocidade_Movimento
+    if glfw.get_key(window, glfw.KEY_A) == glfw.PRESS:
+        Camera_pos[0] -= DireitaX * velocidade_Movimento
+        Camera_pos[2] -= DireitaZ * velocidade_Movimento
+    
+    print(f"X: {Camera_pos[0]:.3f}, Z: {Camera_pos[2]:.3f}")
+
+#funções de desenho// resolvi deixar uma bibilioteca de funções prontas
+def desenhar_cubo():
+    
+    glBegin(GL_TRIANGLES)
+
+    glVertex3f(-0.5, -0.5,  0.5)
+    glVertex3f( 0.5, -0.5,  0.5)
+    glVertex3f( 0.5,  0.5,  0.5)
+
+    glVertex3f(-0.5, -0.5,  0.5)
+    glVertex3f( 0.5,  0.5,  0.5)
+    glVertex3f(-0.5,  0.5,  0.5)
+
+    glVertex3f( 0.5, -0.5, -0.5)
+    glVertex3f(-0.5, -0.5, -0.5)
+    glVertex3f(-0.5,  0.5, -0.5)
+
+    glVertex3f( 0.5, -0.5, -0.5)
+    glVertex3f(-0.5,  0.5, -0.5)
+    glVertex3f( 0.5,  0.5, -0.5)
+
+    glVertex3f(-0.5, 0.5,  0.5)
+    glVertex3f( 0.5, 0.5,  0.5)
+    glVertex3f( 0.5, 0.5, -0.5)
+
+    glVertex3f(-0.5, 0.5,  0.5)
+    glVertex3f( 0.5, 0.5, -0.5)
+    glVertex3f(-0.5, 0.5, -0.5)
+
+    glVertex3f(-0.5, -0.5, -0.5)
+    glVertex3f( 0.5, -0.5, -0.5)
+    glVertex3f( 0.5, -0.5,  0.5)
+
+    glVertex3f(-0.5, -0.5, -0.5)
+    glVertex3f( 0.5, -0.5,  0.5)
+    glVertex3f(-0.5, -0.5,  0.5)
+
+    glVertex3f(0.5, -0.5,  0.5)
+    glVertex3f(0.5, -0.5, -0.5)
+    glVertex3f(0.5,  0.5, -0.5)
+
+    glVertex3f(0.5, -0.5,  0.5)
+    glVertex3f(0.5,  0.5, -0.5)
+    glVertex3f(0.5,  0.5,  0.5)
+
+    glVertex3f(-0.5, -0.5, -0.5)
+    glVertex3f(-0.5, -0.5,  0.5)
+    glVertex3f(-0.5,  0.5,  0.5)
+
+    glVertex3f(-0.5, -0.5, -0.5)
+    glVertex3f(-0.5,  0.5,  0.5)
+    glVertex3f(-0.5,  0.5, -0.5)
+    glEnd()
 
 def desenhar_piso():
     glColor3f(0.2,0.2,0.10)
@@ -75,18 +140,31 @@ def desenhar_piso():
     glVertex3f(-10, 0, -10)
     glVertex3f( 10, 0,  10)
     glVertex3f(-10, 0,  10)
-    
-    glVertex3f(-10, 5, -10)
-    glVertex3f( 10, 5, -10)
-    glVertex3f( 10, 5,  10)
-    
-        # Segundo triângulo
-    glVertex3f(-10, 5, -10)
-    glVertex3f( 10, 5,  10)
-    glVertex3f(-10, 5,  10)
 
     glEnd()
 
+#usado para fazer cadeira e mesa
+def desenhar_pe(posX, posY,posZ):
+    glPushMatrix()
+    glTranslatef(posX, posY, posZ)
+    glScalef(0.15, 0.9 , 0.15)
+    desenhar_cubo()
+    glPopMatrix()
+    
+def desenhar_mesa():
+    # Tampo
+    glPushMatrix()
+    glColor3f(0.4, 0.2, 0.1)
+    glTranslatef(0, 1.0, 0)
+    glScalef(2, 0.3, 1.5)
+    desenhar_cubo()
+    glPopMatrix()
+
+    desenhar_pe(-0.85, 0.45, -0.60)
+    desenhar_pe( 0.85, 0.45, -0.60)
+    desenhar_pe(-0.85, 0.45,  0.60)
+    desenhar_pe( 0.85, 0.45,  0.60)
+    
 def render():
     #tratamento da câmera
     
@@ -116,7 +194,8 @@ def render():
     )
 
     desenhar_piso()
-    
+    desenhar_cubo()
+    desenhar_mesa()
 
 def main():
     if not glfw.init():

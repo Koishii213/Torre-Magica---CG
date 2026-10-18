@@ -10,7 +10,7 @@ Camera_pos = [0.0, 1.7,5.0]
 camera_horizontal = -90
 camera_vertical = 0.0
 
-velocidade = 5.0
+velocidade = 10.0
 sensibilidade = 0.1
 
 ultimoX = None 
@@ -55,7 +55,7 @@ def movimento(window, delta_time):
     DireitaZ =  FrenteX
 
     velocidade_Movimento = velocidade * delta_time
-    
+
     if glfw.get_key(window, glfw.KEY_W) == glfw.PRESS:
         Camera_pos[0] += FrenteX * velocidade_Movimento
         Camera_pos[2] += FrenteZ * velocidade_Movimento
@@ -70,10 +70,8 @@ def movimento(window, delta_time):
     if glfw.get_key(window, glfw.KEY_A) == glfw.PRESS:
         Camera_pos[0] -= DireitaX * velocidade_Movimento
         Camera_pos[2] -= DireitaZ * velocidade_Movimento
-    
-    print(f"X: {Camera_pos[0]:.3f}, Z: {Camera_pos[2]:.3f}")
 
-#funções de desenho// resolvi deixar uma bibilioteca de funções prontas
+#funções de desenho// resolvi deixar uma bibilioteca de funções prontas isso tudo vai acabar virando outro arquivo
 def desenhar_cubo():
     
     glBegin(GL_TRIANGLES)
@@ -164,10 +162,140 @@ def desenhar_mesa():
     desenhar_pe( 0.85, 0.45, -0.60)
     desenhar_pe(-0.85, 0.45,  0.60)
     desenhar_pe( 0.85, 0.45,  0.60)
+
+
+def desenhar_cadeira():
+    cor_madeira = (0.4, 0.22, 0.1)
+
+    # Assento
+    glColor3f(*cor_madeira)
+
+    glPushMatrix()
+    glTranslatef(0, 1.0, 0)
+    glScalef(1.5, 0.2, 1.4)
+    desenhar_cubo()
+    glPopMatrix()
+
+    # Quatro pernas
+    desenhar_pe(-0.6, 0.5, -0.55)
+    desenhar_pe( 0.6, 0.5, -0.55)
+    desenhar_pe(-0.6, 0.5,  0.55)
+    desenhar_pe( 0.6, 0.5,  0.55)
+
+    # Encosto
+    glPushMatrix()
+    glColor3f(*cor_madeira)
+    glTranslatef(0, 1.8, -0.6)
+    glScalef(1.5, 1.4, 0.2)
+    desenhar_cubo()
+    glPopMatrix()
+
+
+def desenhar_quarto():
+    #parede frente e de trás
+    glPushMatrix()
+    glColor3f(0.5,0.5,0.5)
+    glTranslatef(0,2.5,-10)
+    glScalef(20,5,0.2)
+    desenhar_cubo()
+    glPopMatrix()
     
+    glPushMatrix()
+    glColor3f(0.5,0.5,0.5)
+    glTranslatef(0,2.5,10)
+    glScalef(20,5,0.2)
+    desenhar_cubo()
+    glPopMatrix()
+    
+    #parede esquerda e direita
+    glPushMatrix()
+    glColor3f(0.5,0.5,0.5)
+    glTranslatef(10,2.5,0)
+    glScalef(0.2,5,20)
+    desenhar_cubo()
+    glPopMatrix()
+    
+    glPushMatrix()
+    glColor3f(0.5,0.5,0.5)
+    glTranslatef(-10,2.5,0)
+    glScalef(0.2,5,20)
+    desenhar_cubo()
+    glPopMatrix()
+
+    #janelas temporaria//todas elas serão posicionaveis e vão receber um modelo mais complexo
+    glPushMatrix()
+    glColor3f(0,0,0)
+    glTranslatef(-9.5,2,-5)
+    glScalef(0.2,3,2)
+    desenhar_cubo()
+    glPopMatrix()
+    
+    glPushMatrix()
+    glColor3f(0,0,0)
+    glTranslatef(-9.5,2,5)
+    glScalef(0.2,3,2)
+    desenhar_cubo()
+    glPopMatrix()
+
+def desenhar_estante():
+    cor = (0.35, 0.18, 0.08)
+
+    # Laterais
+    glColor3f(*cor)
+
+    glPushMatrix()
+    glTranslatef(-1.0, 1.5, 0)
+    glScalef(0.2, 3.0, 0.6)
+    desenhar_cubo()
+    glPopMatrix()
+
+    glPushMatrix()
+    glTranslatef(1.0, 1.5, 0)
+    glScalef(0.2, 3.0, 0.6)
+    desenhar_cubo()
+    glPopMatrix()
+
+    # Base
+    glPushMatrix()
+    glTranslatef(0, 0.1, 0)
+    glScalef(2.2, 0.2, 0.7)
+    desenhar_cubo()
+    glPopMatrix()
+
+    # Topo
+    glPushMatrix()
+    glTranslatef(0, 3.0, 0)
+    glScalef(2.2, 0.2, 0.7)
+    desenhar_cubo()
+    glPopMatrix()
+
+    # Prateleira do meio
+    glPushMatrix()
+    glTranslatef(0, 1.1, 0)
+    glScalef(1.8, 0.15, 0.65)
+    desenhar_cubo()
+    glPopMatrix()
+
+    # Prateleira superior
+    glPushMatrix()
+    glTranslatef(0, 2.0, 0)
+    glScalef(1.8, 0.15, 0.65)
+    desenhar_cubo()
+    glPopMatrix()
+    
+    #parte de trás
+
+    glPushMatrix()
+    glColor(0.35, 0.38, 0.38)
+    glTranslatef(0, 1.6, -0.3)
+    glScalef(2,2.8,0.1)
+    desenhar_cubo()
+    glPopMatrix()
+    
+
 def render():
     #tratamento da câmera
-    
+
     horizontal = math.radians(camera_horizontal)
     vertical = math.radians(camera_vertical)
     
@@ -193,10 +321,24 @@ def render():
         0,1,0
     )
 
-    desenhar_piso()
-    desenhar_cubo()
-    desenhar_mesa()
 
+    #evitei de colocar teto por agora, to com uma ideia para a parte de colocar os moveis, onde o jogador vai entrar em uma camera com visão superior.
+    desenhar_piso()
+    desenhar_mesa()
+    desenhar_quarto()
+    glPushMatrix()
+    #testes de posicionamento, dps vai ser substituido por uma função onde o jogador vai poder escolher a dedo onde colocar
+    glTranslatef(3,0,9.5)
+    glRotatef(180,0,1,0)
+    desenhar_estante()
+    glPopMatrix()
+    
+    glPushMatrix()
+    glTranslatef(0,0,-2)
+    desenhar_cadeira()
+    glPopMatrix()
+
+    
 def main():
     if not glfw.init():
         return

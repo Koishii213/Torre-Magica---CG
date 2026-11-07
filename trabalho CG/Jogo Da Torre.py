@@ -71,7 +71,7 @@ def movimento(window, delta_time):
         Camera_pos[0] -= DireitaX * velocidade_Movimento
         Camera_pos[2] -= DireitaZ * velocidade_Movimento
 
-#funções de desenho// resolvi deixar uma bibilioteca de funções prontas isso tudo vai acabar virando outro arquivo
+#funções de desenho// resolvi deixar uma bibilioteca de funções prontas,er isso tudo vai acabar virando outro arquivo
 def desenhar_cubo():
     
     glBegin(GL_TRIANGLES)

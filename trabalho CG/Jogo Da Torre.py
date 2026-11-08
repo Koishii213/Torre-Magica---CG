@@ -71,12 +71,25 @@ ui_loc = {}
 ui_vao = None
 ui_vbo = None
 
+# Texturas Globais
+TEX_MADEIRA = 0
+TEX_FERRO = 0
+TEX_PEDIDOS = 0
+TEX_FRASCOS = 0
+TEX_POCAO_1 = 0
+TEX_POCAO_2 = 0
+TEX_POCAO_3 = 0
+TEX_POCAO_4 = 0
+TEX_POCAO_5 = 0
+TEX_POCAO_6 = 0
+
 # ---------------- shaders ----------------
 
 VERTEX_SHADER = """
 #version 330 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
+layout (location = 2) in vec2 aUV;
 
 uniform mat4 uModel;
 uniform mat4 uView;
@@ -85,6 +98,7 @@ uniform mat3 uNormalMatrix;
 
 out vec3 vNormal;
 out vec3 vPos;
+out vec2 vUV;
 
 void main()
 {
@@ -92,6 +106,7 @@ void main()
     vPos = mundo.xyz;
     gl_Position = uProjection * uView * mundo;
     vNormal = uNormalMatrix * aNormal;
+    vUV = aUV;
 }
 """
 
@@ -101,12 +116,16 @@ FRAGMENT_SHADER = """
 
 in vec3 vNormal;
 in vec3 vPos;
+in vec2 vUV;
 
 uniform vec3 uCor;
 uniform vec3 uDirLuz;
 uniform float uEmissivo;
 uniform float uFantasma;
 uniform vec3 uTom;
+
+uniform sampler2D uTex;
+uniform int uUsaTex;
 
 uniform int uNumLuzes;
 uniform vec3 uLuzPos[MAX_LUZES];
@@ -118,7 +137,6 @@ out vec4 FragColor;
 void main()
 {
     vec3 n = normalize(vNormal);
-
     vec3 lum = vec3(0.12 + 0.4 * max(dot(n, uDirLuz), 0.0));
 
     for (int i = 0; i < uNumLuzes; i++) {
@@ -129,7 +147,16 @@ void main()
         lum += uLuzCor[i] * att * max(dot(n, d / max(dist, 1e-4)), 0.0);
     }
 
-    vec3 cor = mix(uCor * lum, uCor, uEmissivo);
+    vec3 corBase = uCor;
+    if (uUsaTex == 1) {
+        vec4 texCor = texture(uTex, vUV);
+        if (texCor.a < 0.1) {
+            discard;
+            }
+            corBase *= texCor.rgb;
+    }
+
+    vec3 cor = mix(corBase * lum, corBase, uEmissivo);
 
     if (uFantasma > 0.5) {
         FragColor = vec4(mix(cor, uTom, 0.5), 0.5);
@@ -176,6 +203,67 @@ void main()
 }
 """
 
+# ---------------- geradores de texturas ----------------
+
+def criar_textura_procedural(img):
+    dados = img.convert("RGBA").tobytes()
+    w, h = img.size
+    tex = glGenTextures(1)
+    glBindTexture(GL_TEXTURE_2D, tex)
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, dados)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+    glBindTexture(GL_TEXTURE_2D, 0)
+    return tex
+
+def gerar_texturas():
+    global TEX_MADEIRA, TEX_FERRO, TEX_PEDIDOS, TEX_FRASCOS
+    
+    # 1. Madeira tábuas
+    img_m = Image.new("RGB", (256, 256), (140, 85, 45))
+    d_m = ImageDraw.Draw(img_m)
+    for y in range(0, 256, 32):
+        d_m.line([(0, y), (256, y)], fill=(90, 50, 25), width=2)
+    for i in range(120):
+        x = np.random.randint(0, 256)
+        y = np.random.randint(0, 256)
+        d_m.line([(x, y), (min(255, x + 25), y)], fill=(120, 70, 35), width=1)
+    TEX_MADEIRA = criar_textura_procedural(img_m)
+
+    # 2. Ferro envelhecido
+    img_f = Image.new("RGB", (256, 256), (90, 95, 100))
+    d_f = ImageDraw.Draw(img_f)
+    for _ in range(400):
+        rx, ry = np.random.randint(0, 256), np.random.randint(0, 256)
+        c = np.random.randint(50, 130)
+        d_f.point((rx, ry), fill=(c, c, c + 5))
+    TEX_FERRO = criar_textura_procedural(img_f)
+
+    # 3. Quadro de Pedidos (Pergaminho com avisos)
+    img_p = Image.new("RGB", (512, 512), (210, 185, 140))
+    d_p = ImageDraw.Draw(img_p)
+    d_p.rectangle([10, 10, 502, 502], outline=(100, 70, 40), width=10)
+    # Desenhar bilhetes pregados
+    cores_bilhetes = [(240, 230, 190), (230, 215, 175), (250, 240, 205)]
+    coords = [(40, 50, 230, 230), (270, 60, 470, 220), (50, 270, 240, 460), (280, 260, 460, 470)]
+    for (x0, y0, x1, y1), c in zip(coords, cores_bilhetes * 2):
+        d_p.rectangle([x0, y0, x1, y1], fill=c, outline=(140, 110, 70), width=2)
+        d_p.ellipse([ (x0+x1)//2 - 4, y0+3, (x0+x1)//2 + 4, y0+11 ], fill=(180, 40, 40)) # alfinete
+        for ly in range(y0 + 25, y1 - 15, 18):
+            d_p.line([(x0 + 15, ly), (x1 - 15, ly)], fill=(90, 80, 70), width=2)
+    TEX_PEDIDOS = criar_textura_procedural(img_p)
+
+    # 4. Rótulos e ingredientes de estante
+    img_ing = Image.new("RGB", (256, 256), (180, 140, 95))
+    d_ing = ImageDraw.Draw(img_ing)
+    for x in range(20, 240, 45):
+        d_ing.rectangle([x, 40, x + 30, 110], fill=(60, 130, 180), outline=(20, 40, 60), width=2)
+        d_ing.rectangle([x, 150, x + 30, 220], fill=(180, 60, 80), outline=(50, 20, 30), width=2)
+    TEX_FRASCOS = criar_textura_procedural(img_ing)
+
 # ---------------- matrizes ----------------
 
 def perspectiva(fov_graus, aspecto, perto, longe):
@@ -187,7 +275,6 @@ def perspectiva(fov_graus, aspecto, perto, longe):
         [0, 0, -1, 0],
     ], dtype=np.float32)
 
-
 def ortho(esq, dir_, baixo, topo, perto, longe):
     m = np.identity(4, dtype=np.float32)
     m[0, 0] = 2 / (dir_ - esq)
@@ -197,7 +284,6 @@ def ortho(esq, dir_, baixo, topo, perto, longe):
     m[2, 2] = -2 / (longe - perto)
     m[2, 3] = -(longe + perto) / (longe - perto)
     return m
-
 
 def look_at(olho, alvo, cima):
     f = alvo - olho
@@ -215,19 +301,16 @@ def look_at(olho, alvo, cima):
     m[2, 3] = np.dot(f, olho)
     return m
 
-
 def matriz_translacao(pos):
     m = np.identity(4, dtype=np.float32)
     m[:3, 3] = pos
     return m
-
 
 def matriz_modelo(pos, escala):
     m = np.identity(4, dtype=np.float32)
     m[0, 0], m[1, 1], m[2, 2] = escala
     m[:3, 3] = pos
     return m
-
 
 def rotacao_y(graus):
     a = math.radians(graus)
@@ -239,7 +322,6 @@ def rotacao_y(graus):
     m[2, 2] = c
     return m
 
-
 def projecao_atual():
     w, h = tamanho_janela()
     aspecto = w / h
@@ -247,11 +329,11 @@ def projecao_atual():
         return ortho(-ZOOM_TOPO * aspecto, ZOOM_TOPO * aspecto, -ZOOM_TOPO, ZOOM_TOPO, 0.1, 100)
     return perspectiva(60, aspecto, 0.1, 100)
 
-# ---------------- malhas ----------------
+# ---------------- malhas com UV ----------------
 
 class Malha:
     def __init__(self, vertices):
-        self.count = len(vertices) // 6
+        self.count = len(vertices) // 8
         self.vao = glGenVertexArrays(1)
         vbo = glGenBuffers(1)
 
@@ -259,11 +341,14 @@ class Malha:
         glBindBuffer(GL_ARRAY_BUFFER, vbo)
         glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
 
-        stride = 6 * 4
+        stride = 8 * 4
+        # Pos (0), Normal (1), UV (2)
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(0))
         glEnableVertexAttribArray(1)
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(12))
+        glEnableVertexAttribArray(2)
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(24))
 
         glBindVertexArray(0)
 
@@ -271,17 +356,17 @@ class Malha:
         glBindVertexArray(self.vao)
         glDrawArrays(GL_TRIANGLES, 0, self.count)
 
-
 def dados_cubo():
     faces = [
         (( 0, 0, 1), ( 1, 0, 0), ( 0, 1, 0)),
-        (( 0, 0,-1), ( 1, 0, 0), ( 0, 1, 0)),
-        (( 1, 0, 0), ( 0, 0, 1), ( 0, 1, 0)),
+        (( 0, 0,-1), (-1, 0, 0), ( 0, 1, 0)),
+        (( 1, 0, 0), ( 0, 0,-1), ( 0, 1, 0)),
         ((-1, 0, 0), ( 0, 0, 1), ( 0, 1, 0)),
-        (( 0, 1, 0), ( 1, 0, 0), ( 0, 0, 1)),
+        (( 0, 1, 0), ( 1, 0, 0), ( 0, 0,-1)),
         (( 0,-1, 0), ( 1, 0, 0), ( 0, 0, 1)),
     ]
     cantos = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
+    uvs = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
 
     verts = []
     for n, u, v in faces:
@@ -289,34 +374,70 @@ def dados_cubo():
         u = np.array(u, dtype=np.float32)
         v = np.array(v, dtype=np.float32)
         pontos = [n * 0.5 + (sx * u + sy * v) * 0.5 for sx, sy in cantos]
-        for i in (0, 1, 2, 0, 2, 3):
-            verts.extend(pontos[i].tolist())
+        for idx in (0, 1, 2, 0, 2, 3):
+            verts.extend(pontos[idx].tolist())
             verts.extend(n.tolist())
+            verts.extend(uvs[idx])
     return np.array(verts, dtype=np.float32)
-
 
 def dados_piso(tam=10.0):
     n = (0.0, 1.0, 0.0)
     pontos = [(-tam, 0, -tam), (tam, 0, -tam), (tam, 0, tam), (-tam, 0, tam)]
+    uvs = [(0.0, 0.0), (tam, 0.0), (tam, tam), (0.0, tam)]
     verts = []
-    for i in (0, 1, 2, 0, 2, 3):
-        verts.extend(pontos[i])
+    for idx in (0, 1, 2, 0, 2, 3):
+        verts.extend(pontos[idx])
         verts.extend(n)
+        verts.extend(uvs[idx])
     return np.array(verts, dtype=np.float32)
 
+def dados_plano(largura=1.0, altura=1.0):
+    hx = largura / 2.0
+    hy = altura / 2.0
+    
+    # 4 cantos do plano no plano XY
+    p = [
+        (-hx, -hy, 0.0), # 0: baixo-esquerda
+        ( hx, -hy, 0.0), # 1: baixo-direita
+        ( hx,  hy, 0.0), # 2: topo-direita
+        (-hx,  hy, 0.0)  # 3: topo-esquerda
+    ]
+    uv = [
+        (0.0, 0.0), # 0
+        (1.0, 0.0), # 1
+        (1.0, 1.0), # 2
+        (0.0, 1.0)  # 3
+    ]
+    
+    verts = []
+    # Face frontal (dois triângulos: 0-1-2 e 0-2-3)
+    for idx in (0, 1, 2, 0, 2, 3):
+        verts.extend(p[idx])
+        verts.extend((0.0, 0.0, 1.0)) # Normal apontando para frente
+        verts.extend(uv[idx])
+        
+    # Face traseira (para ser visível mesmo se o móvel estiver rotacionado)
+    for idx in (0, 2, 1, 0, 3, 2):
+        verts.extend(p[idx])
+        verts.extend((0.0, 0.0, -1.0)) # Normal apontando para trás
+        verts.extend(uv[idx])
+        
+    return np.array(verts, dtype=np.float32)
 
 def dados_cilindro(seg=24, r=0.5, h=0.5):
     verts = []
-
-    def v(p, n):
+    def v(p, n, uv):
         verts.extend(p)
         verts.extend(n)
+        verts.extend(uv)
 
     for i in range(seg):
         a0 = 2 * math.pi * i / seg
         a1 = 2 * math.pi * (i + 1) / seg
         c0, s0 = math.cos(a0), math.sin(a0)
         c1, s1 = math.cos(a1), math.sin(a1)
+        u0 = i / seg
+        u1 = (i + 1) / seg
 
         n0 = (c0, 0, s0)
         n1 = (c1, 0, s1)
@@ -325,55 +446,51 @@ def dados_cilindro(seg=24, r=0.5, h=0.5):
         t0 = (r * c0, h, r * s0)
         t1 = (r * c1, h, r * s1)
 
-        v(b0, n0); v(b1, n1); v(t1, n1)
-        v(b0, n0); v(t1, n1); v(t0, n0)
+        v(b0, n0, (u0, 0.0)); v(b1, n1, (u1, 0.0)); v(t1, n1, (u1, 1.0))
+        v(b0, n0, (u0, 0.0)); v(t1, n1, (u1, 1.0)); v(t0, n0, (u0, 1.0))
 
-        v((0, h, 0), (0, 1, 0)); v(t0, (0, 1, 0)); v(t1, (0, 1, 0))
-        v((0, -h, 0), (0, -1, 0)); v(b1, (0, -1, 0)); v(b0, (0, -1, 0))
+        v((0, h, 0), (0, 1, 0), (0.5, 0.5)); v(t0, (0, 1, 0), (0.5 + 0.5*c0, 0.5 + 0.5*s0)); v(t1, (0, 1, 0), (0.5 + 0.5*c1, 0.5 + 0.5*s1))
+        v((0, -h, 0), (0, -1, 0), (0.5, 0.5)); v(b1, (0, -1, 0), (0.5 + 0.5*c1, 0.5 + 0.5*s1)); v(b0, (0, -1, 0), (0.5 + 0.5*c0, 0.5 + 0.5*s0))
 
     return np.array(verts, dtype=np.float32)
-
 
 def dados_esfera(stacks=16, slices=24, r=0.5):
     def ponto(i, j):
         t = math.pi * i / stacks
         f = 2 * math.pi * j / slices
-        n = np.array([math.sin(t) * math.cos(f), math.cos(t), math.sin(t) * math.sin(f)],
-                     dtype=np.float32)
-        return n * r, n
+        n = np.array([math.sin(t) * math.cos(f), math.cos(t), math.sin(t) * math.sin(f)], dtype=np.float32)
+        uv = (j / slices, i / stacks)
+        return n * r, n, uv
 
     verts = []
     for i in range(stacks):
         for j in range(slices):
-            a = ponto(i, j)
-            b = ponto(i + 1, j)
-            c = ponto(i + 1, j + 1)
-            d = ponto(i, j + 1)
-            for p, n in (a, b, c, a, c, d):
+            p_a, n_a, uv_a = ponto(i, j)
+            p_b, n_b, uv_b = ponto(i + 1, j)
+            p_c, n_c, uv_c = ponto(i + 1, j + 1)
+            p_d, n_d, uv_d = ponto(i, j + 1)
+            for p, n, uv in ((p_a, n_a, uv_a), (p_b, n_b, uv_b), (p_c, n_c, uv_c),
+                             (p_a, n_a, uv_a), (p_c, n_c, uv_c), (p_d, n_d, uv_d)):
                 verts.extend(p.tolist())
                 verts.extend(n.tolist())
+                verts.extend(uv)
     return np.array(verts, dtype=np.float32)
 
-
 MALHAS = {}
-MEIO_MALHA = {"cubo": 0.5, "cilindro": 0.5, "esfera": 0.5, "piso": 10.0}
+MEIO_MALHA = {"cubo": 0.5, "cilindro": 0.5, "esfera": 0.5, "piso": 10.0, "plano": 0.5}
 
 # ---------------- definição dos móveis ----------------
 
-Peca = namedtuple("Peca", "malha cor pos escala emissivo solido")
+Peca = namedtuple("Peca", "malha cor pos escala emissivo solido tex", defaults=[0])
 
-
-def P(malha, cor, pos, escala, emissivo=0.0, solido=True):
-    return Peca(malha, cor, pos, escala, emissivo, solido)
-
+def P(malha, cor, pos, escala, emissivo=0.0, solido=True, tex=0):
+    return Peca(malha, cor, pos, escala, emissivo, solido, tex)
 
 def pernas(cor, pontos, y=0.45, altura=0.9):
     return [P("cubo", cor, (x, y, z), (0.15, altura, 0.15)) for x, z in pontos]
 
-
 def luz(pos, cor, intensidade=1.0, raio=5.0):
     return (pos, cor, intensidade, raio)
-
 
 def peca_parede(eixo, fixo, s0, s1, y0, y1, esp, cor, emissivo=0.0, solido=True):
     sc = (s0 + s1) / 2
@@ -383,7 +500,6 @@ def peca_parede(eixo, fixo, s0, s1, y0, y1, esp, cor, emissivo=0.0, solido=True)
     if eixo == "x":
         return P("cubo", cor, (sc, yc, fixo), (sl, yl, esp), emissivo, solido)
     return P("cubo", cor, (fixo, yc, sc), (esp, yl, sl), emissivo, solido)
-
 
 def parede(eixo, fixo, inicio, fim, janelas=(), altura=ALTURA_QUARTO, esp=0.2, cor=(0.5, 0.5, 0.5)):
     pecas = []
@@ -401,10 +517,8 @@ def parede(eixo, fixo, inicio, fim, janelas=(), altura=ALTURA_QUARTO, esp=0.2, c
                 pecas.append(peca_parede(eixo, fixo, a, b, y1, altura, esp, cor))
     return pecas
 
-
 def teto(cor=(0.42, 0.40, 0.38)):
     return [P("cubo", cor, (0, ALTURA_QUARTO + 0.1, 0), (20, 0.2, 20), solido=False)]
-
 
 def criar_janela(eixo, fixo, s0, s1, y0, y1, esp=0.2):
     borda = 0.08
@@ -419,7 +533,6 @@ def criar_janela(eixo, fixo, s0, s1, y0, y1, esp=0.2):
                     esp * 0.25, vidro, emissivo=0.4, solido=True),
     ]
 
-
 MADEIRA = (0.4, 0.2, 0.1)
 MADEIRA_ESCURA = (0.35, 0.18, 0.08)
 PAREDE = (0.5, 0.5, 0.5)
@@ -430,127 +543,150 @@ JANELAS_ESQ = [(-6, -4, 0.5, 3.5), (4, 6, 0.5, 3.5)]
 MOVEIS = {}
 LUZES_MODELO = {}
 
-
 def definir_movel(nome, pecas, luzes=()):
     MOVEIS[nome] = pecas
     LUZES_MODELO[nome] = list(luzes)
 
+def carregar_definicoes_moveis():
+    definir_movel("chao", [
+        P("piso", (0.2, 0.2, 0.1), (0, 0, 0), (1, 1, 1), solido=False),
+    ])
 
-definir_movel("chao", [
-    P("piso", (0.2, 0.2, 0.1), (0, 0, 0), (1, 1, 1), solido=False),
-])
+    definir_movel("quarto", [
+        *parede("x", -10, -10, 10),
+        *parede("x", 10, -10, 10),
+        *parede("z", 10, -10, 10),
+        *parede("z", -10, -10, 10, janelas=JANELAS_ESQ),
+        *criar_janela("z", -10, -6, -4, 0.5, 3.5),
+        *criar_janela("z", -10, 4, 6, 0.5, 3.5),
+        *teto(),
+    ])
 
-definir_movel("quarto", [
-    *parede("x", -10, -10, 10),
-    *parede("x", 10, -10, 10),
-    *parede("z", 10, -10, 10),
-    *parede("z", -10, -10, 10, janelas=JANELAS_ESQ),
-    *criar_janela("z", -10, -6, -4, 0.5, 3.5),
-    *criar_janela("z", -10, 4, 6, 0.5, 3.5),
-    *teto(),
-])
+    definir_movel("tapete", [
+        P("cubo", (0.45, 0.1, 0.1), (0, 0.01, 0), (4, 0.02, 3), solido=False),
+    ])
 
-definir_movel("tapete", [
-    P("cubo", (0.45, 0.1, 0.1), (0, 0.01, 0), (4, 0.02, 3), solido=False),
-])
+    definir_movel("mesa", [
+        P("cubo", (1, 1, 1), (0, 1.0, 0), (2, 0.3, 1.5), tex=TEX_MADEIRA),
+        *pernas(MADEIRA, [(-0.85, -0.6), (0.85, -0.6), (-0.85, 0.6), (0.85, 0.6)]),
+    ])
 
-definir_movel("mesa", [
-    P("cubo", MADEIRA, (0, 1.0, 0), (2, 0.3, 1.5)),
-    *pernas(MADEIRA, [(-0.85, -0.6), (0.85, -0.6), (-0.85, 0.6), (0.85, 0.6)]),
-])
+    definir_movel("cadeira", [
+        P("cubo", MADEIRA, (0, 1.0, 0), (1.5, 0.2, 1.4)),
+        *pernas(MADEIRA, [(-0.6, -0.55), (0.6, -0.55), (-0.6, 0.55), (0.6, 0.55)], y=0.5),
+        P("cubo", MADEIRA, (0, 1.8, -0.6), (1.5, 1.4, 0.2)),
+    ])
 
-definir_movel("cadeira", [
-    P("cubo", MADEIRA, (0, 1.0, 0), (1.5, 0.2, 1.4)),
-    *pernas(MADEIRA, [(-0.6, -0.55), (0.6, -0.55), (-0.6, 0.55), (0.6, 0.55)], y=0.5),
-    P("cubo", MADEIRA, (0, 1.8, -0.6), (1.5, 1.4, 0.2)),
-])
+    definir_movel("estante", [
+        P("cubo", MADEIRA_ESCURA, (-1.0, 1.5, 0), (0.2, 3.0, 0.6)),
+        P("cubo", MADEIRA_ESCURA, (1.0, 1.5, 0), (0.2, 3.0, 0.6)),
+        P("cubo", MADEIRA_ESCURA, (0, 0.1, 0), (2.2, 0.2, 0.7)),
+        P("cubo", MADEIRA_ESCURA, (0, 3.0, 0), (2.2, 0.2, 0.7)),
+        P("cubo", MADEIRA_ESCURA, (0, 1.1, 0), (1.8, 0.15, 0.65)),
+        P("cubo", MADEIRA_ESCURA, (0, 2.0, 0), (1.8, 0.15, 0.65)),
+        P("cubo", (0.35, 0.38, 0.38), (0, 1.6, -0.3), (2, 2.8, 0.1), solido=False),
+    ])
 
-definir_movel("estante", [
-    P("cubo", MADEIRA_ESCURA, (-1.0, 1.5, 0), (0.2, 3.0, 0.6)),
-    P("cubo", MADEIRA_ESCURA, (1.0, 1.5, 0), (0.2, 3.0, 0.6)),
-    P("cubo", MADEIRA_ESCURA, (0, 0.1, 0), (2.2, 0.2, 0.7)),
-    P("cubo", MADEIRA_ESCURA, (0, 3.0, 0), (2.2, 0.2, 0.7)),
-    P("cubo", MADEIRA_ESCURA, (0, 1.1, 0), (1.8, 0.15, 0.65)),
-    P("cubo", MADEIRA_ESCURA, (0, 2.0, 0), (1.8, 0.15, 0.65)),
-    P("cubo", (0.35, 0.38, 0.38), (0, 1.6, -0.3), (2, 2.8, 0.1), solido=False),
-])
+    definir_movel("cama", [
+        P("cubo", (0.45, 0.25, 0.12), (0, 0.35, 0), (1.8, 0.7, 3.2)),
+        P("cubo", (0.85, 0.82, 0.75), (0, 0.825, 0), (1.7, 0.25, 3.0), solido=False),
+        P("cubo", (0.5, 0.1, 0.15), (0, 0.97, 0.4), (1.75, 0.04, 1.9), solido=False),
+        P("cubo", (0.95, 0.95, 0.95), (0, 1.0, -1.0), (1.2, 0.2, 0.5), solido=False),
+        P("cubo", (0.45, 0.25, 0.12), (0, 0.95, -1.7), (1.9, 1.9, 0.2)),
+    ])
 
-definir_movel("cama", [
-    P("cubo", (0.45, 0.25, 0.12), (0, 0.35, 0), (1.8, 0.7, 3.2)),
-    P("cubo", (0.85, 0.82, 0.75), (0, 0.825, 0), (1.7, 0.25, 3.0), solido=False),
-    P("cubo", (0.5, 0.1, 0.15), (0, 0.97, 0.4), (1.75, 0.04, 1.9), solido=False),
-    P("cubo", (0.95, 0.95, 0.95), (0, 1.0, -1.0), (1.2, 0.2, 0.5), solido=False),
-    P("cubo", (0.45, 0.25, 0.12), (0, 0.95, -1.7), (1.9, 1.9, 0.2)),
-])
+    TOPO_ESCRIVANINHA = 1.075
+    _livros = [((0.6, 0.1, 0.1), 0.30, -0.7), ((0.1, 0.3, 0.6), 0.25, -0.4), ((0.2, 0.5, 0.2), 0.35, -0.1)]
+    _escrivaninha = [
+        P("cubo", (1, 1, 1), (0, 1.0, 0), (2.2, 0.15, 0.9), tex=TEX_MADEIRA),
+        P("cubo", MADEIRA, (-1.0, 0.5, 0), (0.1, 1.0, 0.8)),
+        P("cubo", MADEIRA, (1.0, 0.5, 0), (0.1, 1.0, 0.8)),
+    ]
+    for _cor, _h, _dx in _livros:
+        _escrivaninha.append(P("cubo", _cor, (_dx, TOPO_ESCRIVANINHA + _h / 2, 0), (0.25, _h, 0.6), solido=False))
+    _escrivaninha.append(P("cilindro", (0.95, 0.92, 0.8), (0.6, TOPO_ESCRIVANINHA + 0.15, 0), (0.12, 0.3, 0.12), solido=False))
+    _escrivaninha.append(P("esfera", (1.0, 0.6, 0.1), (0.6, TOPO_ESCRIVANINHA + 0.37, 0), (0.1, 0.16, 0.1), emissivo=1.0, solido=False))
+    definir_movel("escrivaninha", _escrivaninha)
 
-TOPO_ESCRIVANINHA = 1.075
-_livros = [((0.6, 0.1, 0.1), 0.30, -0.7), ((0.1, 0.3, 0.6), 0.25, -0.4), ((0.2, 0.5, 0.2), 0.35, -0.1)]
-_escrivaninha = [
-    P("cubo", MADEIRA, (0, 1.0, 0), (2.2, 0.15, 0.9)),
-    P("cubo", MADEIRA, (-1.0, 0.5, 0), (0.1, 1.0, 0.8)),
-    P("cubo", MADEIRA, (1.0, 0.5, 0), (0.1, 1.0, 0.8)),
-]
-for _cor, _h, _dx in _livros:
-    _escrivaninha.append(P("cubo", _cor, (_dx, TOPO_ESCRIVANINHA + _h / 2, 0), (0.25, _h, 0.6), solido=False))
-_escrivaninha.append(P("cilindro", (0.95, 0.92, 0.8), (0.6, TOPO_ESCRIVANINHA + 0.15, 0), (0.12, 0.3, 0.12), solido=False))
-_escrivaninha.append(P("esfera", (1.0, 0.6, 0.1), (0.6, TOPO_ESCRIVANINHA + 0.37, 0), (0.1, 0.16, 0.1), emissivo=1.0, solido=False))
-definir_movel("escrivaninha", _escrivaninha)
+    definir_movel("bau", [
+        P("cubo", (1, 1, 1), (0, 0.3, 0), (1.2, 0.6, 0.8), tex=TEX_MADEIRA),
+        P("cubo", (1, 1, 1), (0, 0.7, 0), (1.2, 0.2, 0.8), solido=False, tex=TEX_MADEIRA),
+        P("cubo", (0.85, 0.7, 0.2), (0, 0.55, 0.42), (0.15, 0.2, 0.05), solido=False),
+    ])
 
-definir_movel("bau", [
-    P("cubo", (0.45, 0.28, 0.12), (0, 0.3, 0), (1.2, 0.6, 0.8)),
-    P("cubo", (0.5, 0.33, 0.15), (0, 0.7, 0), (1.2, 0.2, 0.8), solido=False),
-    P("cubo", (0.85, 0.7, 0.2), (0, 0.55, 0.42), (0.15, 0.2, 0.05), solido=False),
-])
+    # 1. CALDEIRÃO COM TEXTURA DE FERRO E BORDA
+    definir_movel("caldeirao", [
+        P("esfera", (1, 1, 1), (0, 0.75, 0), (1.0, 0.8, 1.0), tex=TEX_FERRO),
+        P("cilindro", (1, 1, 1), (0, 1.13, 0), (1.1, 0.08, 1.1), solido=False, tex=TEX_FERRO),
+        P("cilindro", (0.2, 0.85, 0.3), (0, 1.1, 0), (0.85, 0.02, 0.85), emissivo=0.8, solido=False),
+        P("cubo", (1, 1, 1), (-0.55, 1.08, 0), (0.12, 0.1, 0.25), solido=False, tex=TEX_FERRO),
+        P("cubo", (1, 1, 1), (0.55, 1.08, 0), (0.12, 0.1, 0.25), solido=False, tex=TEX_FERRO),
+        *[P("cubo", (1, 1, 1), (x, 0.2, z), (0.12, 0.4, 0.12), solido=False, tex=TEX_FERRO)
+          for x, z in [(-0.35, -0.35), (0.35, -0.35), (-0.35, 0.35), (0.35, 0.35)]],
+        P("cubo", (1, 1, 1), (0, 0.02, 0), (0.7, 0.05, 0.12), solido=False, tex=TEX_MADEIRA),
+        P("cubo", (1, 1, 1), (0, 0.02, 0), (0.12, 0.05, 0.7), solido=False, tex=TEX_MADEIRA),
+        P("esfera", (1.0, 0.45, 0.1), (0, 0.12, 0), (0.3, 0.3, 0.3), emissivo=1.0, solido=False),
+    ], luzes=[
+        luz((0, 0.5, 0), (1.0, 0.4, 0.1), intensidade=0.8, raio=3.0),
+    ])
 
-CALDEIRAO_CORPO = (0.12, 0.12, 0.14)
-FERRO = (0.25, 0.25, 0.28)
-FERRO_ESCURO = (0.15, 0.15, 0.17)
-LENHA = (0.35, 0.18, 0.08)
+    # 2. QUADRO DE PEDIDOS (Mural na parede com textura de bilhetes)
+    definir_movel("quadro_pedidos", [
+        P("cubo", (1, 1, 1), (0, 1.8, 0), (2.0, 1.5, 0.08), tex=TEX_MADEIRA), # Moldura
+        P("cubo", (1, 1, 1), (0, 1.8, 0.04), (1.8, 1.3, 0.02), solido=False, tex=TEX_PEDIDOS), # Área dos bilhetes
+    ])
 
-definir_movel("caldeirao", [
-    P("esfera", CALDEIRAO_CORPO, (0, 0.75, 0), (1.0, 0.8, 1.0)),
-    P("cilindro", FERRO_ESCURO, (0, 1.13, 0), (1.1, 0.08, 1.1), solido=False),
-    P("cilindro", (0.2, 0.85, 0.3), (0, 1.1, 0), (0.85, 0.02, 0.85), emissivo=0.6, solido=False),
-    P("cubo", FERRO, (-0.55, 1.08, 0), (0.12, 0.1, 0.25), solido=False),
-    P("cubo", FERRO, (0.55, 1.08, 0), (0.12, 0.1, 0.25), solido=False),
-    *[P("cubo", FERRO_ESCURO, (x, 0.2, z), (0.12, 0.4, 0.12), solido=False)
-      for x, z in [(-0.35, -0.35), (0.35, -0.35), (-0.35, 0.35), (0.35, 0.35)]],
-    P("cubo", LENHA, (0, 0.02, 0), (0.7, 0.05, 0.12), solido=False),
-    P("cubo", LENHA, (0, 0.02, 0), (0.12, 0.05, 0.7), solido=False),
-    P("esfera", (1.0, 0.45, 0.1), (0, 0.12, 0), (0.3, 0.3, 0.3), emissivo=1.0, solido=False),
-])
+    # 3. ESTANTE DE INGREDIENTES (Prateleiras com frascos/poções texturizados)
+    definir_movel("estante_ingredientes", [
+        # Estrutura de madeira
+        P("cubo", MADEIRA_ESCURA, (-1.0, 1.5, 0), (0.2, 3.0, 0.6)),
+        P("cubo", MADEIRA_ESCURA, (1.0, 1.5, 0), (0.2, 3.0, 0.6)),
+        P("cubo", MADEIRA_ESCURA, (0, 0.1, 0), (2.2, 0.2, 0.7)),
+        P("cubo", MADEIRA_ESCURA, (0, 3.0, 0), (2.2, 0.2, 0.7)),
+        P("cubo", MADEIRA_ESCURA, (0, 1.1, 0), (1.8, 0.15, 0.65)),
+        P("cubo", MADEIRA_ESCURA, (0, 2.0, 0), (1.8, 0.15, 0.65)),
+        
+        # Fundo cinza 
+        P("cubo", (0.35, 0.38, 0.38), (0, 1.6, -0.3), (2, 2.8, 0.1), solido=False),
+        
+        # --- PRATELEIRA INFERIOR (3 imagens lado a lado) ---
+        P("plano", (1, 1, 1), (-0.55, 1.45, -0.18), (0.45, 0.55, 1.0), solido=False, tex=TEX_POCAO_1),
+        P("plano", (1, 1, 1), ( 0.00, 1.45, -0.18), (0.45, 0.55, 1.0), solido=False, tex=TEX_POCAO_2),
+        P("plano", (1, 1, 1), ( 0.55, 1.45, -0.18), (0.45, 0.55, 1.0), solido=False, tex=TEX_POCAO_3),
+        
+        # --- PRATELEIRA SUPERIOR (3 imagens lado a lado) ---
+        P("plano", (1, 1, 1), (-0.55, 2.35, -0.18), (0.45, 0.55, 1.0), solido=False, tex=TEX_POCAO_4),
+        P("plano", (1, 1, 1), ( 0.00, 2.35, -0.18), (0.45, 0.55, 1.0), solido=False, tex=TEX_POCAO_5),
+        P("plano", (1, 1, 1), ( 0.55, 2.35, -0.18), (0.45, 0.55, 1.0), solido=False, tex=TEX_POCAO_6),
+    ])
 
-definir_movel("pedestal", [
-    P("cilindro", (0.5, 0.5, 0.55), (0, 0.5, 0), (0.6, 1.0, 0.6)),
-    P("esfera", (0.3, 0.8, 1.0), (0, 1.4, 0), (0.45, 0.6, 0.45), emissivo=0.7, solido=False),
-], luzes=[
-    luz((0, 1.4, 0), (0.3, 0.8, 1.0), intensidade=1.4, raio=5.0),
-])
-
-# Móveis que o jogador pode colocar (os fixos ficam de fora)
-DISPONIVEIS = [n for n in MOVEIS if n not in ("chao", "quarto")]
+    definir_movel("pedestal", [
+        P("cilindro", (0.5, 0.5, 0.55), (0, 0.5, 0), (0.6, 1.0, 0.6)),
+        P("esfera", (0.3, 0.8, 1.0), (0, 1.4, 0), (0.45, 0.6, 0.45), emissivo=0.7, solido=False),
+    ], luzes=[
+        luz((0, 1.4, 0), (0.3, 0.8, 1.0), intensidade=1.4, raio=5.0),
+    ])
 
 # ---------------- catálogo: categorias e informações ----------------
-# (título, categoria, cor de exibição, descrição curta)
 
 CATEGORIAS = ["Todos", "Dormir", "Estudar", "Guardar", "Sentar", "Magia", "Decorar"]
 
 CATALOGO = {
-    "mesa":         ("Mesa",          "Sentar",   MADEIRA,              "Mesa de madeira, quatro pernas"),
-    "cadeira":      ("Cadeira",       "Sentar",   MADEIRA,              "Cadeira com encosto"),
-    "estante":      ("Estante",       "Guardar",  MADEIRA_ESCURA,       "Prateleiras para livros"),
-    "cama":         ("Cama",          "Dormir",   (0.45, 0.25, 0.12),   "Cama com cabeceira e cobertor"),
-    "escrivaninha": ("Escrivaninha",  "Estudar",  MADEIRA,              "Mesa de estudo com vela"),
-    "bau":          ("Baú",           "Guardar",  (0.45, 0.28, 0.12),   "Baú com fecho dourado"),
-    "caldeirao":    ("Caldeirão",     "Magia",    (0.35, 0.35, 0.40),   "Caldeirão com caldo e chama"),
-    "pedestal":     ("Pedestal",      "Magia",    (0.3, 0.8, 1.0),      "Pedestal que ilumina o quarto"),
-    "tapete":       ("Tapete",        "Decorar",  (0.45, 0.1, 0.1),     "Tapete sem bloquear passagem"),
+    "mesa":                 ("Mesa",                  "Sentar",   MADEIRA,              "Mesa de madeira, quatro pernas"),
+    "cadeira":              ("Cadeira",               "Sentar",   MADEIRA,              "Cadeira com encosto"),
+    "estante":              ("Estante",               "Guardar",  MADEIRA_ESCURA,       "Prateleiras para livros"),
+    "cama":                 ("Cama",                  "Dormir",   (0.45, 0.25, 0.12),   "Cama com cabeceira e cobertor"),
+    "escrivaninha":         ("Escrivaninha",          "Estudar",  MADEIRA,              "Mesa de estudo com vela"),
+    "bau":                  ("Baú",                   "Guardar",  (0.45, 0.28, 0.12),   "Baú com fecho dourado"),
+    "caldeirao":            ("Caldeirão",             "Magia",    (0.25, 0.25, 0.28),   "Caldeirão texturizado de ferro"),
+    "quadro_pedidos":       ("Quadro Pedidos",        "Magia",    (0.85, 0.75, 0.5),    "Mural com pedidos e avisos"),
+    "estante_ingredientes": ("Estante Ingredientes",  "Magia",    (0.4, 0.25, 0.15),    "Prateleira com poções mágicas"),
+    "pedestal":             ("Pedestal",              "Magia",    (0.3, 0.8, 1.0),      "Pedestal que ilumina o quarto"),
+    "tapete":               ("Tapete",                "Decorar",  (0.45, 0.1, 0.1),     "Tapete sem bloquear passagem"),
 }
-
 
 def info_catalogo(nome):
     return CATALOGO.get(nome, (nome, "Outros", (0.5, 0.5, 0.5), ""))
-
 
 def nomes_filtrados():
     cat = CATEGORIAS[categoria_ativa]
@@ -558,8 +694,7 @@ def nomes_filtrados():
         return list(DISPONIVEIS)
     return [n for n in DISPONIVEIS if info_catalogo(n)[1] == cat]
 
-
-# Disposição inicial do quarto: (nome, x, z, rotação)
+# Disposição inicial da torre mágica
 MOVEIS_INICIAIS = [
     ("tapete", 0, 2, 0),
     ("mesa", 0, 0, 0),
@@ -569,6 +704,8 @@ MOVEIS_INICIAIS = [
     ("escrivaninha", 5, -9.1, 0),
     ("bau", 6, 4, 0),
     ("caldeirao", -4, 3, 0),
+    ("quadro_pedidos", -9.7, 0, 90),
+    ("estante_ingredientes", -7.5, 9.5, 180),
     ("pedestal", -4, -5, 0),
 ]
 
@@ -578,7 +715,6 @@ def caixa_de(m, meio):
     centro = m[:3, 3]
     extensao = np.abs(m[:3, :3]) @ np.full(3, meio, dtype=np.float64)
     return centro - extensao, centro + extensao
-
 
 def construir_item(nome, x, z, rot, fixo=False):
     base = matriz_translacao((x, 0.0, z)) @ rotacao_y(rot)
@@ -596,6 +732,7 @@ def construir_item(nome, x, z, rot, fixo=False):
             m.astype(np.float32),
             normal.astype(np.float32),
             peca.emissivo,
+            peca.tex
         ))
         mn, mx = caixa_de(m, MEIO_MALHA[peca.malha])
         bmin = np.minimum(bmin, mn)
@@ -624,7 +761,6 @@ def construir_item(nome, x, z, rot, fixo=False):
         "luzes": luzes_item,
     }
 
-
 def reconstruir_mundo():
     global cena, cena_topo, caixas, luzes_ativas
     cena = []
@@ -637,8 +773,9 @@ def reconstruir_mundo():
         luzes_ativas.extend(item["luzes"])
     cena_topo = [d for d in cena if d[2][1, 3] < ALTURA_QUARTO - 0.5 or d[2][1, 3] > ALTURA_QUARTO + 0.5]
 
-
 def construir_cena():
+    global DISPONIVEIS
+    DISPONIVEIS = [n for n in MOVEIS if n not in ("chao", "quarto")]
     itens.clear()
     itens.append(construir_item("chao", 0, 0, 0, fixo=True))
     itens.append(construir_item("quarto", 0, 0, 0, fixo=True))
@@ -651,10 +788,8 @@ def construir_cena():
 def sobrepoe(a_min, a_max, b_min, b_max):
     return all(a_min[i] < b_max[i] and a_max[i] > b_min[i] for i in range(3))
 
-
 def posicao_valida(item):
     bmin, bmax = item["bbox"]
-
     if (bmin[0] < -LIMITE_QUARTO or bmax[0] > LIMITE_QUARTO or
             bmin[2] < -LIMITE_QUARTO or bmax[2] > LIMITE_QUARTO):
         return False
@@ -678,7 +813,6 @@ def tamanho_janela():
     w, h = glfw.get_window_size(janela)
     return max(w, 1), max(h, 1)
 
-
 def vetor_olhar():
     if modo_posicao:
         olho = np.array([foco[0], ALTURA_TOPO, foco[1]], dtype=np.float64)
@@ -694,10 +828,8 @@ def vetor_olhar():
     olho = np.array([Camera_pos[0], ALTURA_OLHOS, Camera_pos[2]], dtype=np.float64)
     return olho, frente
 
-
 def vetor_cima():
     return np.array([0, 0, -1], dtype=np.float32) if modo_posicao else UP
-
 
 def raio_mira():
     if not modo_posicao:
@@ -712,10 +844,8 @@ def raio_mira():
     z = foco[1] - ndc_y * ZOOM_TOPO
     return np.array([x, ALTURA_TOPO, z]), np.array([0.0, -1.0, 0.0])
 
-
 def alcance_atual():
     return 100.0 if modo_posicao else ALCANCE_INTERACAO
-
 
 def calcular_alvo():
     origem, frente = raio_mira()
@@ -728,7 +858,6 @@ def calcular_alvo():
     x = round(float(p[0]) / GRADE) * GRADE
     z = round(float(p[2]) / GRADE) * GRADE
     return x, z
-
 
 def intersecta_caixa(origem, direcao, bmin, bmax, alcance):
     tmin, tmax = 0.0, alcance
@@ -751,7 +880,6 @@ def intersecta_caixa(origem, direcao, bmin, bmax, alcance):
             return None
     return tmin
 
-
 def atualizar_fantasma():
     global fantasma, fantasma_valido
     fantasma = None
@@ -764,7 +892,7 @@ def atualizar_fantasma():
     fantasma = construir_item(DISPONIVEIS[indice], alvo[0], alvo[1], rot_fantasma)
     fantasma_valido = posicao_valida(fantasma)
 
-# ---------------- textos e retângulos da interface ----------------
+# ---------------- interface 2D ----------------
 
 def criar_buffers_ui():
     global ui_vao, ui_vbo
@@ -779,7 +907,6 @@ def criar_buffers_ui():
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(8))
     glBindVertexArray(0)
 
-
 def fonte(tam):
     for nome in ["arial.ttf", "Arial.ttf", "DejaVuSans.ttf"]:
         try:
@@ -791,9 +918,7 @@ def fonte(tam):
     except TypeError:
         return ImageFont.load_default()
 
-
 _cache_texto = {}
-
 
 def textura_texto(texto, tam):
     chave = (texto, tam)
@@ -817,7 +942,6 @@ def textura_texto(texto, tam):
 
     _cache_texto[chave] = (tex, w, h)
     return _cache_texto[chave]
-
 
 def desenhar_retangulo_ui(x, y, w, h, cor, textura=None):
     verts = np.array([
@@ -843,17 +967,14 @@ def desenhar_retangulo_ui(x, y, w, h, cor, textura=None):
 
     glDrawArrays(GL_TRIANGLES, 0, 6)
 
-
 def desenhar_texto(texto, x, y, cor, tam=16):
     tex, w, h = textura_texto(texto, tam)
     desenhar_retangulo_ui(x, y, w, h, cor, tex)
-
 
 def desenhar_texto_centro(texto, rect, cor, tam=16):
     rx, ry, rw, rh = rect
     tex, w, h = textura_texto(texto, tam)
     desenhar_retangulo_ui(rx + (rw - w) / 2, ry + (rh - h) / 2, w, h, cor, tex)
-
 
 def ponto_em(rect, px, py):
     x, y, w, h = rect
@@ -863,7 +984,6 @@ def ponto_em(rect, px, py):
 
 CATALOGO_X, CATALOGO_Y, CATALOGO_W = 40, 40, 660
 CARD_H, CARD_GAP = 104, 12
-
 
 def layout_catalogo():
     filtrados = nomes_filtrados()
@@ -886,10 +1006,8 @@ def layout_catalogo():
     altura = 104 + linhas * (CARD_H + CARD_GAP) + 4
     return {"painel": (x0, y0, w, altura), "abas": abas, "cards": cards}
 
-
 def clicar_catalogo(px, py):
     global categoria_ativa, catalogo_aberto, indice
-
     lay = layout_catalogo()
     for i, r in enumerate(lay["abas"]):
         if ponto_em(r, px, py):
@@ -903,7 +1021,6 @@ def clicar_catalogo(px, py):
             atualizar_titulo()
             print(f"Selecionado: {info_catalogo(nome)[0]}")
             return
-
 
 def render_catalogo(prog_3d):
     mx, my = glfw.get_cursor_pos(janela)
@@ -944,10 +1061,6 @@ def render_catalogo(prog_3d):
     glUseProgram(prog_3d)
     glEnable(GL_DEPTH_TEST)
 
-
-def nomes_do_catalogo_visiveis():
-    return nomes_filtrados()
-
 # ---------------- ações do modo de posicionamento ----------------
 
 def atualizar_titulo():
@@ -958,7 +1071,6 @@ def atualizar_titulo():
         titulo = "Torre Magica | TAB: modo de posicionamento"
     glfw.set_window_title(janela, titulo)
 
-
 def tentar_colocar():
     if fantasma is None:
         return
@@ -968,7 +1080,6 @@ def tentar_colocar():
     itens.append(fantasma)
     reconstruir_mundo()
     print(f"Colocado: {fantasma['nome']}")
-
 
 def tentar_remover():
     origem, frente = raio_mira()
@@ -1004,10 +1115,8 @@ def colide(pos):
             return True
     return False
 
-
 def mover_com_colisao(delta):
     global Camera_pos
-
     nova = Camera_pos.copy()
     nova[0] += delta[0]
     if not colide(nova):
@@ -1021,9 +1130,7 @@ def mover_com_colisao(delta):
 # ---------------- controles ----------------
 
 def mouse(window, xpos, ypos):
-    global ultimoX, ultimoY
-    global camera_vertical, camera_horizontal
-
+    global ultimoX, ultimoY, camera_vertical, camera_horizontal
     if modo_posicao:
         return
 
@@ -1040,9 +1147,7 @@ def mouse(window, xpos, ypos):
 
     camera_horizontal += dx * sensibilidade
     camera_vertical += dy * sensibilidade
-
     camera_vertical = max(-89, min(89, camera_vertical))
-
 
 def tecla(window, key, scancode, action, mods):
     global modo_posicao, indice, rot_fantasma, ultimoX, catalogo_aberto
@@ -1079,7 +1184,6 @@ def tecla(window, key, scancode, action, mods):
 
     atualizar_titulo()
 
-
 def clique(window, button, action, mods):
     if action != glfw.PRESS or not modo_posicao:
         return
@@ -1095,14 +1199,11 @@ def clique(window, button, action, mods):
     elif button == glfw.MOUSE_BUTTON_RIGHT:
         tentar_remover()
 
-
 def rolagem(window, xoffset, yoffset):
     global rot_fantasma
-
     if modo_posicao and not catalogo_aberto:
         rot_fantasma = (rot_fantasma + yoffset * GRAUS_SCROLL) % 360
         atualizar_titulo()
-
 
 def movimento(window, delta_time):
     if modo_posicao:
@@ -1119,10 +1220,8 @@ def movimento(window, delta_time):
         return
 
     angulo = math.radians(camera_horizontal)
-
     FrenteX = math.cos(angulo)
     FrenteZ = math.sin(angulo)
-
     DireitaX = -FrenteZ
     DireitaZ = FrenteX
 
@@ -1158,15 +1257,19 @@ def enviar_luzes(loc):
     glUniform3fv(loc["uLuzCor"], n, cor)
     glUniform1fv(loc["uLuzRaio"], n, raio)
 
-
 def desenhar_lista(lista, loc):
-    for malha, cor, m, normal, emissivo in lista:
+    for malha, cor, m, normal, emissivo, tex in lista:
         glUniformMatrix4fv(loc["uModel"], 1, GL_TRUE, m)
         glUniformMatrix3fv(loc["uNormalMatrix"], 1, GL_TRUE, normal)
         glUniform3f(loc["uCor"], *cor)
         glUniform1f(loc["uEmissivo"], emissivo)
+        if tex != 0:
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, tex)
+            glUniform1i(loc["uUsaTex"], 1)
+        else:
+            glUniform1i(loc["uUsaTex"], 0)
         malha.desenhar()
-
 
 def render(loc):
     olho, frente = vetor_olhar()
@@ -1185,7 +1288,7 @@ def render(loc):
     if modo_posicao:
         m = matriz_modelo((Camera_pos[0], 0.05, Camera_pos[2]), (0.6, 0.1, 0.6)).astype(np.float32)
         normal = np.linalg.inv(m[:3, :3]).T.astype(np.float32)
-        desenhar_lista([(MALHAS["cilindro"], (0.9, 0.85, 0.3), m, normal, 1.0)], loc)
+        desenhar_lista([(MALHAS["cilindro"], (0.9, 0.85, 0.3), m, normal, 1.0, 0)], loc)
 
     if fantasma is not None:
         verde = (0.2, 1.0, 0.3)
@@ -1200,9 +1303,31 @@ def render(loc):
     if modo_posicao and catalogo_aberto:
         render_catalogo(programa_3d)
 
+def carregar_textura_png(caminho):
+    try:
+        
+        img = Image.open(caminho).transpose(Image.FLIP_TOP_BOTTOM).convert("RGBA")
+        dados = img.tobytes()
+        w, h = img.size
+
+        tex = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, tex)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, dados)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glBindTexture(GL_TEXTURE_2D, 0)
+        return tex
+    except Exception as e:
+        print(f"Erro ao carregar imagem {caminho}: {e}")
+        return 0
+
+# ---------------- inicialização ----------------
 
 def main():
-    global janela, programa_3d, programa_ui
+    global janela, programa_3d, programa_ui, ui_loc
 
     if not glfw.init():
         return
@@ -1232,19 +1357,19 @@ def main():
 
     loc = {nome: glGetUniformLocation(programa_3d, nome) for nome in
            ["uModel", "uView", "uProjection", "uNormalMatrix",
-            "uCor", "uDirLuz", "uEmissivo", "uFantasma", "uTom", "uNumLuzes"]}
+            "uCor", "uDirLuz", "uEmissivo", "uFantasma", "uTom", "uNumLuzes", "uTex", "uUsaTex"]}
     for nome in ["uLuzPos", "uLuzCor", "uLuzRaio"]:
         loc[nome] = glGetUniformLocation(programa_3d, nome + "[0]")
 
     luz_dir = np.array([0.4, 1.0, 0.3], dtype=np.float32)
     luz_dir /= np.linalg.norm(luz_dir)
     glUniform3f(loc["uDirLuz"], *luz_dir)
+    glUniform1i(loc["uTex"], 0)
 
     programa_ui = compileProgram(
         compileShader(UI_VERTEX, GL_VERTEX_SHADER),
         compileShader(UI_FRAGMENT, GL_FRAGMENT_SHADER),
     )
-    global ui_loc
     ui_loc = {nome: glGetUniformLocation(programa_ui, nome) for nome in
               ["uTela", "uCor", "uTex", "uUsaTex"]}
     glUseProgram(programa_ui)
@@ -1257,8 +1382,19 @@ def main():
         "piso": Malha(dados_piso()),
         "cilindro": Malha(dados_cilindro()),
         "esfera": Malha(dados_esfera()),
+        "plano": Malha (dados_plano(1.0, 1.0)),
     })
 
+    gerar_texturas()
+    global TEX_POCAO_1, TEX_POCAO_2, TEX_POCAO_3, TEX_POCAO_4, TEX_POCAO_5, TEX_POCAO_6
+    
+    TEX_POCAO_1 = carregar_textura_png("pocoes (1).png")
+    TEX_POCAO_2 = carregar_textura_png("pocoes (2).png")
+    TEX_POCAO_3 = carregar_textura_png("pocoes (3).png")
+    TEX_POCAO_4 = carregar_textura_png("pocoes (4).png")
+    TEX_POCAO_5 = carregar_textura_png("pocoes (5).png")
+    TEX_POCAO_6 = carregar_textura_png("pocoes (6).png")
+    carregar_definicoes_moveis()
     construir_cena()
 
     glfw.set_input_mode(janela, glfw.CURSOR, glfw.CURSOR_DISABLED)
@@ -1285,7 +1421,6 @@ def main():
         glfw.swap_buffers(janela)
 
     glfw.terminate()
-
 
 if __name__ == '__main__':
     main()
